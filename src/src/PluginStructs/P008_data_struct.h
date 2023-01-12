@@ -43,6 +43,16 @@ private:
 
   int8_t _pin1 = -1;
   int8_t _pin2 = -1;
+
+  // >>> Write Wiegand
+  int8_t _pinOutD0 = 4;
+  int8_t _pinOutD1 = 5;
+  int8_t _count = 0;
+  boolean got_line; // 'true' on newline ('\n') reception
+  void outwiegbit(unsigned int b); // output one Wiegand bit
+  void outwieg26(uint32_t u32); // output a Wiegand-26 code
+  void process_line(const char str[]); // process the input line received from the serial port
+  // Write Wiegand <<<
 };
 
 #endif // ifdef USES_P008

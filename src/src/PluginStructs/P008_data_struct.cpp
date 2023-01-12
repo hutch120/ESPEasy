@@ -75,6 +75,21 @@ bool P008_data_struct::plugin_init(struct EventStruct *event) {
                        this,
                        FALLING);
   }
+
+  // >>> Write Wiegand
+  pinMode(_pinOutD0, OUTPUT);  
+  pinMode(_pinOutD1, OUTPUT);
+  digitalWrite(_pinOutD0, 1); // set line to IDLE state
+  digitalWrite(_pinOutD1, 1); // "             "
+  got_line = false;
+
+  String log = F("Wiegand Init. D0 Pin ");
+  log += _pinOutD0;
+  log += F(", D1 Pin ");
+  log += _pinOutD1;
+  addLogMove(LOG_LEVEL_INFO, log);
+  // Write Wiegand <<<
+
   initialised = true;
   return initialised;
 }
@@ -86,6 +101,22 @@ bool P008_data_struct::plugin_once_a_second(struct EventStruct *event) {
   bool success = false;
 
   if (initialised) {
+    // >>> Write Wiegand
+    _count++;
+    if (_count > 10) {
+      _count = 0;
+      // Must be a 24 bit number max. 16777215
+      //                              10000001
+      uint32_t c = 10000001 + random(1, 500);
+      if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+        String log = F("Wiegand Write card ");
+        log += c;
+        addLogMove(LOG_LEVEL_INFO, log);
+      }
+      outwieg26(c);
+      // Write Wiegand <<<
+    }
+    
     if (bitCount > 0) {
       success = true; // Let's assume read succeeded
       uint64_t keyMask = 0ull;
@@ -211,6 +242,9 @@ void IRAM_ATTR P008_data_struct::Plugin_008_shift_bit_in_buffer(P008_data_struct
 *********************************************************************/
 void IRAM_ATTR P008_data_struct::Plugin_008_interrupt1(P008_data_struct *self) {
   // We've received a 1 bit. (bit 0 = high, bit 1 = low)
+  String log = F("1 ");
+  log += millis();
+  addLog(LOG_LEVEL_INFO, log);
   Plugin_008_shift_bit_in_buffer(self, 1); // Shift in a 1
 }
 
@@ -219,7 +253,105 @@ void IRAM_ATTR P008_data_struct::Plugin_008_interrupt1(P008_data_struct *self) {
 *********************************************************************/
 void IRAM_ATTR P008_data_struct::Plugin_008_interrupt2(P008_data_struct *self) {
   // We've received a 0 bit. (bit 0 = low, bit 1 = high)
+  String log = F("0 ");
+  log += millis();
+  addLog(LOG_LEVEL_INFO, log);
   Plugin_008_shift_bit_in_buffer(self, 0); // Shift in a 0
 }
+
+
+// outputs ONE Wiegand bit
+void P008_data_struct::outwiegbit(unsigned int b)
+{
+  int sel = b == 0 ? _pinOutD0 : _pinOutD1;
+  digitalWrite(sel, 0);
+  //String log = F("Low ");
+  //log += millis();
+  //addLog(LOG_LEVEL_INFO, log);
+  delayMicroseconds(50);
+  digitalWrite(sel, 1);
+  //String log2 = F("High ");
+  //log2 += millis();
+  //addLog(LOG_LEVEL_INFO, log2);
+  delayMicroseconds(250);
+  // Removing this log message seems to break the system?? WTF?? 
+  // Setting larger delays doesnt do anything.
+  String log3 = F("Next ");
+  log3 += millis();
+  addLog(LOG_LEVEL_INFO, log3);
+}
+
+// outputs a 26 bit Wiegand code
+// u32 is actually the 24-bit numeric code
+void P008_data_struct::outwieg26(uint32_t u32)
+{
+  String binLog = F("Binary Number ");
+
+  uint32_t tmp = u32;
+  unsigned int p_even = 0;
+  unsigned int p_odd = 1;
+  // compute parity on trailing group of bits 
+  for (int n=0; n<12; ++n)
+  {
+    p_odd ^= (tmp & 1);
+    tmp >>= 1;
+  }
+  // compute parity on heading group of bits
+  for (int n=12; n<24; ++n)
+  {
+    p_even ^= (tmp & 1);
+    tmp >>= 1;
+  }
+  // now output data bits framed by parity ones
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    //String log = F("Start parity bit ");
+    //log += p_even;
+    //binLog += p_even;
+    //addLog(LOG_LEVEL_INFO, log);
+  }
+  
+  outwiegbit(p_even);
+  for (int n=0; n<24; ++n)
+  {
+    unsigned int nextBit = (u32 >> (23-n)) & 1;
+    if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+      //String log = F("");
+      //log += nextBit;    
+      //binLog += nextBit;
+      //addLog(LOG_LEVEL_INFO, log);
+    }
+    outwiegbit(nextBit);
+  }
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    //String log = F("End parity bit ");
+    //log += p_odd;
+    //binLog += p_odd;
+    //addLog(LOG_LEVEL_INFO, log);
+  }
+  outwiegbit(p_odd);  
+
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    //addLog(LOG_LEVEL_INFO, binLog);
+  }
+}
+
+// output just 'meaningful' numbers
+/*
+void P008_data_struct::process_line(const char str[])
+{
+  char msg[64];
+  long l = atol(str);
+  if (l < 0 || l > 0xFFFFFF)
+  {
+    Serial.write("ERROR\n");
+    return;
+  }
+  sprintf(msg, "OK: %ld (0x%06lX)\n", l, l);
+  Serial.write(msg);
+  outwieg26((unsigned long) l);
+  delay(1000); // << !!! DO NOT Use delay THIS IN THIS FRAMEWORK. !!!
+}
+*/
+
 
 #endif // ifdef USES_P008
